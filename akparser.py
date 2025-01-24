@@ -1,4 +1,4 @@
-import requests
+ import requests
 from bs4 import BeautifulSoup
 import csv
 import logging
@@ -113,13 +113,22 @@ def parse_characteristics(soup):
 def extract_additional_description(soup):
     """Извлечение дополнительного описания товара."""
     additional_desc = []
-    table_rows = soup.find_all('tr', valign='top')
+    table_rows = soup.find_all('tr', valign='top')  # ищем все строки таблицы
     for row in table_rows:
         cells = row.find_all('td')
-        if len(cells) > 1:
+        if len(cells) == 2:  # Строки с двумя ячейками
             key = cells[0].get_text(strip=True)
             value = cells[1].get_text(strip=True)
             additional_desc.append(f"{key}: {value}")
+        elif len(cells) == 3:  # Строки с тремя ячейками (для % от суточной нормы)
+            key = cells[0].get_text(strip=True)
+            value = cells[1].get_text(strip=True)
+            percent = cells[2].get_text(strip=True)
+            additional_desc.append(f"{key}: {value} ({percent})")
+        elif len(cells) == 1:  # Если строка содержит только одну ячейку
+            key = cells[0].get_text(strip=True)
+            additional_desc.append(f"{key}: ")
+    
     return "\n".join(additional_desc) if additional_desc else "Дополнительное описание отсутствует"
 
 def auto_detect_and_parse(soup, base_url):
@@ -132,7 +141,7 @@ def auto_detect_and_parse(soup, base_url):
         'Характеристики': {'data': parse_characteristics(soup)},
         'Артикул': {'data': soup.find("div", class_="article iblock", itemprop="additionalProperty").get_text(strip=True) if soup.find("div", class_="article iblock", itemprop="additionalProperty") else 'Артикул отсутствует'},
         'Описание': {'data': extract_description(soup)},
-        'Дополнительное описание': {'data': extract_additional_description(soup)}
+        'Дополнительное описание': {'data': extract_additional_description(soup)}  # Дополнительное описание
     }
     return data
 
