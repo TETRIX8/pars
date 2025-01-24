@@ -1,4 +1,4 @@
- import requests
+import requests
 from bs4 import BeautifulSoup
 import csv
 import logging
@@ -8,6 +8,7 @@ import json
 import re
 from rich.logging import RichHandler
 from rich.console import Console
+import concurrent.futures
 
 # Настройка Rich
 console = Console()
@@ -203,6 +204,11 @@ def save_to_json(products, filename):
         json.dump(products, file, ensure_ascii=False, indent=4)
     logger.info(f"[green]Данные сохранены в {filename}[/green]")
 
+def parse_product_multithread(url):
+    """Обёртка для многопоточного парсинга продукта."""
+    logger.info(f"[blue]Обрабатывается:[/blue] {url}")
+    return parse_product(url)
+
 def main():
     console.print("[bold magenta]A-K Project[/bold magenta]", style="bold magenta")
     catalog_url = "https://zumus.ru/catalog"
@@ -220,14 +226,19 @@ def main():
     product_links = parse_catalog(catalog_url, start_page, end_page)
 
     logger.info(f"[yellow]Найдено {len(product_links)} товаров. Парсинг данных...[/yellow]")
-    products = []
 
-    for link in product_links:
-        logger.info(f"[blue]Обрабатывается:[/blue] {link}")
-        product_data = parse_product(link)
-        if product_data:
-            products.append(product_data)
-        time.sleep(1)
+    # Многопоточный парсинг
+    products = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                product_data = future.result()
+                if product_data:
+                    products.append(product_data)
+            except Exception as e:
+                logger.error(f"[red]Ошибка обработки товара {url}: {e}[/red]")
 
     logger.info("[green]Сохранение данных в CSV...[/green]")
     save_to_csv(products, output_csv)
