@@ -111,6 +111,7 @@ def parse_characteristics(soup):
         return characteristics_text.strip()
     return "Характеристики отсутствуют"
 
+
 def extract_additional_description(soup):
     """Извлечение дополнительного описания товара."""
     additional_desc = []
@@ -214,6 +215,7 @@ def main():
     catalog_url = "https://zumus.ru/catalog"
     output_csv = "products.csv"
     output_json = "products.json"
+    failed_links_file = "failed_products.txt"
 
     try:
         start_page = int(console.input("[bold cyan]Введите номер начальной страницы: [/bold cyan]"))
@@ -224,11 +226,15 @@ def main():
 
     logger.info("[yellow]Чтение каталога...[/yellow]")
     product_links = parse_catalog(catalog_url, start_page, end_page)
+    total_products = len(product_links)
 
-    logger.info(f"[yellow]Найдено {len(product_links)} товаров. Парсинг данных...[/yellow]")
+    logger.info(f"[yellow]Найдено {total_products} товаров. Парсинг данных...[/yellow]")
 
     # Многопоточный парсинг
     products = []
+    failed_links = []  # Список для неудачных ссылок
+    completed = 0  # Счетчик обработанных товаров
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
         for future in concurrent.futures.as_completed(future_to_url):
@@ -237,14 +243,30 @@ def main():
                 product_data = future.result()
                 if product_data:
                     products.append(product_data)
+                else:
+                    failed_links.append(url)
             except Exception as e:
                 logger.error(f"[red]Ошибка обработки товара {url}: {e}[/red]")
+                failed_links.append(url)
+
+            # Обновление прогресса
+            completed += 1
+            remaining = total_products - completed
+            logger.info(f"[cyan]Обработано: {completed}/{total_products}. Осталось: {remaining}[/cyan]")
 
     logger.info("[green]Сохранение данных в CSV...[/green]")
     save_to_csv(products, output_csv)
 
     logger.info("[green]Сохранение данных в JSON...[/green]")
     save_to_json(products, output_json)
+
+    # Сохранение неудачных ссылок
+    if failed_links:
+        with open(failed_links_file, 'w', encoding='utf-8') as file:
+            file.write("\n".join(failed_links))
+        logger.warning(f"[yellow]Сохранены неудачные ссылки в {failed_links_file}[/yellow]")
+    else:
+        logger.info("[green]Все продукты успешно загружены.[/green]")
 
 if __name__ == "__main__":
     main()
