@@ -209,6 +209,7 @@ def parse_product_multithread(url):
     """Обёртка для многопоточного парсинга продукта."""
     logger.info(f"[blue]Обрабатывается:[/blue] {url}")
     return parse_product(url)
+
 def main():
     console.print("[bold magenta]A-K Project[/bold magenta]", style="bold magenta")
     catalog_url = "https://zumus.ru/catalog"
@@ -217,8 +218,8 @@ def main():
     failed_links_file = "failed_products.txt"
 
     # Установите начальную и конечную страницы здесь
-    start_page = 1  # Задайте начальную страницу
-    end_page = 1   # Задайте конечную страницу
+    start_page = 101 # Задайте начальную страницу
+    end_page = 500   # Задайте конечную страницу
 
     logger.info("[yellow]Чтение каталога...[/yellow]")
     product_links = parse_catalog(catalog_url, start_page, end_page)
@@ -226,32 +227,63 @@ def main():
 
     logger.info(f"[yellow]Найдено {total_products} товаров. Парсинг данных...[/yellow]")
 
-    # Многопоточный парсинг
-    products = []
-    failed_links = []  # Список для неудачных ссылок
-    completed = 0  # Счетчик обработанных товаров
+    # Открытие CSV для записи в реальном времени
+    fieldnames = [
+        'Product Code', 'Product Name', 'Category', 'Price',
+        'Description', 'Additional Description', 'Image URL', 'Features'
+    ]
+    with open(output_csv, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
-        for future in concurrent.futures.as_completed(future_to_url):
-            url = future_to_url[future]
-            try:
-                product_data = future.result()
-                if product_data:
-                    products.append(product_data)
-                else:
+        # Многопоточный парсинг
+        products = []
+        failed_links = []  # Список для неудачных ссылок
+        completed = 0  # Счетчик обработанных товаров
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
+            for future in concurrent.futures.as_completed(future_to_url):
+                url = future_to_url[future]
+                try:
+                    product_data = future.result()
+                    if product_data:
+                        products.append(product_data)
+
+                        # Дописываем продукт в CSV
+                        product_code = product_data.get('Артикул', {}).get('data', '')
+                        product_name = product_data.get('Название', {}).get('data', '')
+                        category = product_data.get('CATEGORY', {}).get('data', '')
+                        price = product_data.get('Цена', {}).get('data', '')
+                        description = product_data.get('Описание', {}).get('data', '')
+                        additional_description = product_data.get('Дополнительное описание', {}).get('data', '')
+                        images = product_data.get('Ссылки на изображения', {}).get('data', [])
+                        features = product_data.get('Характеристики', {}).get('data', '')
+
+                        images_text = "\n".join(images) if images else 'Изображения отсутствуют'
+                        features_text = features
+
+                        row = {
+                            'Product Code': product_code,
+                            'Product Name': product_name,
+                            'Category': category,
+                            'Price': price,
+                            'Description': description,
+                            'Additional Description': additional_description,
+                            'Image URL': images_text,
+                            'Features': features_text
+                        }
+                        writer.writerow(row)
+                    else:
+                        failed_links.append(url)
+                except Exception as e:
+                    logger.error(f"[red]Ошибка обработки товара {url}: {e}[/red]")
                     failed_links.append(url)
-            except Exception as e:
-                logger.error(f"[red]Ошибка обработки товара {url}: {e}[/red]")
-                failed_links.append(url)
 
-            # Обновление прогресса
-            completed += 1
-            remaining = total_products - completed
-            logger.info(f"[cyan]Обработано: {completed}/{total_products}. Осталось: {remaining}[/cyan]")
-
-    logger.info("[green]Сохранение данных в CSV...[/green]")
-    save_to_csv(products, output_csv)
+                # Обновление прогресса
+                completed += 1
+                remaining = total_products - completed
+                logger.info(f"[cyan]Обработано: {completed}/{total_products}. Осталось: {remaining}[/cyan]")
 
     logger.info("[green]Сохранение данных в JSON...[/green]")
     save_to_json(products, output_json)
