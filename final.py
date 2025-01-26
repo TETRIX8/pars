@@ -218,8 +218,8 @@ def main():
     failed_links_file = "failed_products.txt"
 
     # Установите начальную и конечную страницы здесь
-    start_page = 101 # Задайте начальную страницу
-    end_page = 500   # Задайте конечную страницу
+    start_page = 501 # Задайте начальную страницу
+    end_page = 1000  # Задайте конечную страницу
 
     logger.info("[yellow]Чтение каталога...[/yellow]")
     product_links = parse_catalog(catalog_url, start_page, end_page)
