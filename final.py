@@ -209,7 +209,6 @@ def parse_product_multithread(url):
     """Обёртка для многопоточного парсинга продукта."""
     logger.info(f"[blue]Обрабатывается:[/blue] {url}")
     return parse_product(url)
-
 def main():
     console.print("[bold magenta]A-K Project[/bold magenta]", style="bold magenta")
     catalog_url = "https://zumus.ru/catalog"
@@ -217,12 +216,9 @@ def main():
     output_json = "products.json"
     failed_links_file = "failed_products.txt"
 
-    try:
-        start_page = int(console.input("[bold cyan]Введите номер начальной страницы: [/bold cyan]"))
-        end_page = int(console.input("[bold cyan]Введите номер конечной страницы: [/bold cyan]"))
-    except ValueError:
-        logger.error("[red]Некорректный ввод страниц. Попробуйте снова.[/red]")
-        return
+    # Установите начальную и конечную страницы здесь
+    start_page = 1  # Задайте начальную страницу
+    end_page = 1   # Задайте конечную страницу
 
     logger.info("[yellow]Чтение каталога...[/yellow]")
     product_links = parse_catalog(catalog_url, start_page, end_page)
@@ -235,7 +231,7 @@ def main():
     failed_links = []  # Список для неудачных ссылок
     completed = 0  # Счетчик обработанных товаров
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1000) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
