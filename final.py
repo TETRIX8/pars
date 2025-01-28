@@ -99,38 +99,35 @@ def clean_text(text):
     return "\n".join(cleaned_lines)
 
 def parse_characteristics(soup):
-    """Парсинг характеристик с добавлением переносов строк перед ключевыми словами."""
+    """Парсинг характеристик."""
     characteristics_element = soup.find("div", class_="top_props")
     if characteristics_element:
         characteristics_text = clean_text(characteristics_element.get_text())
-        logger.debug(f"[blue]Очищенные характеристики: {characteristics_text}[/blue]")
-
         keywords = ["Вес", "Размер упаковки", "Доступные варианты", "Фасовка", "UPC Код"]
         for keyword in keywords:
             characteristics_text = re.sub(f"(?<!\\n)({keyword})", r"\n\1", characteristics_text)
         return characteristics_text.strip()
     return "Характеристики отсутствуют"
 
-
 def extract_additional_description(soup):
     """Извлечение дополнительного описания товара."""
     additional_desc = []
-    table_rows = soup.find_all('tr', valign='top')  # ищем все строки таблицы
+    table_rows = soup.find_all('tr', valign='top')
     for row in table_rows:
         cells = row.find_all('td')
-        if len(cells) == 2:  # Строки с двумя ячейками
+        if len(cells) == 2:
             key = cells[0].get_text(strip=True)
             value = cells[1].get_text(strip=True)
             additional_desc.append(f"{key}: {value}")
-        elif len(cells) == 3:  # Строки с тремя ячейками (для % от суточной нормы)
+        elif len(cells) == 3:
             key = cells[0].get_text(strip=True)
             value = cells[1].get_text(strip=True)
             percent = cells[2].get_text(strip=True)
             additional_desc.append(f"{key}: {value} ({percent})")
-        elif len(cells) == 1:  # Если строка содержит только одну ячейку
+        elif len(cells) == 1:
             key = cells[0].get_text(strip=True)
             additional_desc.append(f"{key}: ")
-    
+
     return "\n".join(additional_desc) if additional_desc else "Дополнительное описание отсутствует"
 
 def auto_detect_and_parse(soup, base_url):
@@ -143,7 +140,7 @@ def auto_detect_and_parse(soup, base_url):
         'Характеристики': {'data': parse_characteristics(soup)},
         'Артикул': {'data': soup.find("div", class_="article iblock", itemprop="additionalProperty").get_text(strip=True) if soup.find("div", class_="article iblock", itemprop="additionalProperty") else 'Артикул отсутствует'},
         'Описание': {'data': extract_description(soup)},
-        'Дополнительное описание': {'data': extract_additional_description(soup)}  # Дополнительное описание
+        'Дополнительное описание': {'data': extract_additional_description(soup)}
     }
     return data
 
@@ -155,9 +152,7 @@ def parse_product(url):
 
     soup = BeautifulSoup(html, 'html.parser')
     try:
-        product_data = auto_detect_and_parse(soup, url)
-        logger.debug(f"[blue]Данные товара с {url}: {product_data}[/blue]")
-        return product_data
+        return auto_detect_and_parse(soup, url)
     except Exception as e:
         logger.error(f"[red]Ошибка извлечения данных с {url}: {e}[/red]")
         return None
@@ -171,32 +166,18 @@ def save_to_csv(products, filename):
         ]
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
-
         for product in products:
-            product_code = product.get('Артикул', {}).get('data', '')
-            product_name = product.get('Название', {}).get('data', '')
-            category = product.get('CATEGORY', {}).get('data', '')
-            price = product.get('Цена', {}).get('data', '')
-            description = product.get('Описание', {}).get('data', '')
-            additional_description = product.get('Дополнительное описание', {}).get('data', '')
-            images = product.get('Ссылки на изображения', {}).get('data', [])
-            features = product.get('Характеристики', {}).get('data', '')
-
-            images_text = "\n".join(images) if images else 'Изображения отсутствуют'
-            features_text = features
-
             row = {
-                'Product Code': product_code,
-                'Product Name': product_name,
-                'Category': category,
-                'Price': price,
-                'Description': description,
-                'Additional Description': additional_description,
-                'Image URL': images_text,
-                'Features': features_text
+                'Product Code': product.get('Артикул', {}).get('data', ''),
+                'Product Name': product.get('Название', {}).get('data', ''),
+                'Category': product.get('CATEGORY', {}).get('data', ''),
+                'Price': product.get('Цена', {}).get('data', ''),
+                'Description': product.get('Описание', {}).get('data', ''),
+                'Additional Description': product.get('Дополнительное описание', {}).get('data', ''),
+                'Image URL': "\n".join(product.get('Ссылки на изображения', {}).get('data', [])),
+                'Features': product.get('Характеристики', {}).get('data', '')
             }
             writer.writerow(row)
-
     logger.info(f"[green]Данные сохранены в {filename}[/green]")
 
 def save_to_json(products, filename):
@@ -205,96 +186,26 @@ def save_to_json(products, filename):
         json.dump(products, file, ensure_ascii=False, indent=4)
     logger.info(f"[green]Данные сохранены в {filename}[/green]")
 
-def parse_product_multithread(url):
-    """Обёртка для многопоточного парсинга продукта."""
-    logger.info(f"[blue]Обрабатывается:[/blue] {url}")
-    return parse_product(url)
-
 def main():
-    console.print("[bold magenta]A-K Project[/bold magenta]", style="bold magenta")
     catalog_url = "https://zumus.ru/catalog"
     output_csv = "products.csv"
     output_json = "products.json"
-    failed_links_file = "failed_products.txt"
+    start_page = 1
+    end_page = 1
 
-    # Установите начальную и конечную страницы здесь
-    start_page = 501 # Задайте начальную страницу
-    end_page = 1000  # Задайте конечную страницу
-
-    logger.info("[yellow]Чтение каталога...[/yellow]")
     product_links = parse_catalog(catalog_url, start_page, end_page)
-    total_products = len(product_links)
+    logger.info(f"[yellow]Парсинг данных о {len(product_links)} товарах...[/yellow]")
 
-    logger.info(f"[yellow]Найдено {total_products} товаров. Парсинг данных...[/yellow]")
+    products = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_url = {executor.submit(parse_product, url): url for url in product_links}
+        for future in concurrent.futures.as_completed(future_to_url):
+            product_data = future.result()
+            if product_data:
+                products.append(product_data)
 
-    # Открытие CSV для записи в реальном времени
-    fieldnames = [
-        'Product Code', 'Product Name', 'Category', 'Price',
-        'Description', 'Additional Description', 'Image URL', 'Features'
-    ]
-    with open(output_csv, 'w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=fieldnames)
-        writer.writeheader()
-
-        # Многопоточный парсинг
-        products = []
-        failed_links = []  # Список для неудачных ссылок
-        completed = 0  # Счетчик обработанных товаров
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_url = {executor.submit(parse_product_multithread, url): url for url in product_links}
-            for future in concurrent.futures.as_completed(future_to_url):
-                url = future_to_url[future]
-                try:
-                    product_data = future.result()
-                    if product_data:
-                        products.append(product_data)
-
-                        # Дописываем продукт в CSV
-                        product_code = product_data.get('Артикул', {}).get('data', '')
-                        product_name = product_data.get('Название', {}).get('data', '')
-                        category = product_data.get('CATEGORY', {}).get('data', '')
-                        price = product_data.get('Цена', {}).get('data', '')
-                        description = product_data.get('Описание', {}).get('data', '')
-                        additional_description = product_data.get('Дополнительное описание', {}).get('data', '')
-                        images = product_data.get('Ссылки на изображения', {}).get('data', [])
-                        features = product_data.get('Характеристики', {}).get('data', '')
-
-                        images_text = "\n".join(images) if images else 'Изображения отсутствуют'
-                        features_text = features
-
-                        row = {
-                            'Product Code': product_code,
-                            'Product Name': product_name,
-                            'Category': category,
-                            'Price': price,
-                            'Description': description,
-                            'Additional Description': additional_description,
-                            'Image URL': images_text,
-                            'Features': features_text
-                        }
-                        writer.writerow(row)
-                    else:
-                        failed_links.append(url)
-                except Exception as e:
-                    logger.error(f"[red]Ошибка обработки товара {url}: {e}[/red]")
-                    failed_links.append(url)
-
-                # Обновление прогресса
-                completed += 1
-                remaining = total_products - completed
-                logger.info(f"[cyan]Обработано: {completed}/{total_products}. Осталось: {remaining}[/cyan]")
-
-    logger.info("[green]Сохранение данных в JSON...[/green]")
+    save_to_csv(products, output_csv)
     save_to_json(products, output_json)
-
-    # Сохранение неудачных ссылок
-    if failed_links:
-        with open(failed_links_file, 'w', encoding='utf-8') as file:
-            file.write("\n".join(failed_links))
-        logger.warning(f"[yellow]Сохранены неудачные ссылки в {failed_links_file}[/yellow]")
-    else:
-        logger.info("[green]Все продукты успешно загружены.[/green]")
 
 if __name__ == "__main__":
     main()
